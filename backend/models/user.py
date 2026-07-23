@@ -15,6 +15,8 @@ class User(BaseModel):
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    # Subscription tier: free | pro | quant (billing integration pending)
+    plan = Column(String(20), default="free", nullable=False)
     
     # Relationships
     strategies = relationship("Strategy", back_populates="user")

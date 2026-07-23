@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
-from db.database import engine, Base
+from db.database import engine, Base, run_startup_migrations
 from api import health
 from api import brokers as broker_routes
 from api import strategies as strategy_routes
@@ -19,8 +19,9 @@ from models import user  # noqa: F401
 from models import strategy  # noqa: F401
 from models import backtest  # noqa: F401
 
-# Create database tables
+# Create database tables and apply lightweight column migrations
 Base.metadata.create_all(bind=engine)
+run_startup_migrations()
 
 # Initialize FastAPI app
 app = FastAPI(

@@ -1,101 +1,64 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Bell, Search, Settings, User, ChevronDown } from "lucide-react";
-import { useState } from "react";
+import Link from "next/link";
+import { Plus, Globe } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+
+const titles: Array<{ match: (p: string) => boolean; title: string; subtitle: string }> = [
+    { match: (p) => p === "/dashboard", title: "Dashboard", subtitle: "Portfolio performance at a glance" },
+    { match: (p) => p === "/strategies", title: "Strategies", subtitle: "Your algorithmic trading library" },
+    { match: (p) => p.startsWith("/strategies/new"), title: "New Strategy", subtitle: "Build and validate trading logic" },
+    { match: (p) => p.startsWith("/strategies/"), title: "Strategy Lab", subtitle: "Configure and run simulations" },
+    { match: (p) => p === "/backtests", title: "Backtests", subtitle: "Full simulation history" },
+    { match: (p) => p.startsWith("/backtests/"), title: "Backtest Report", subtitle: "Deep performance analytics" },
+];
 
 export default function Header() {
     const pathname = usePathname();
-    const [showUserMenu, setShowUserMenu] = useState(false);
+    const [clock, setClock] = useState("");
 
-    const getTitle = () => {
-        if (pathname === "/dashboard") return "Dashboard";
-        if (pathname === "/strategies") return "Strategies";
-        if (pathname === "/backtests") return "Backtests & Results";
-        if (pathname.startsWith("/strategies/new")) return "Create New Strategy";
-        if (pathname.startsWith("/strategies/")) return "Strategy Details";
-        if (pathname.startsWith("/backtests/")) return "Backtest Results";
-        return "Backtesting Platform";
-    };
+    useEffect(() => {
+        const tick = () => {
+            const now = new Date();
+            setClock(
+                now.toLocaleTimeString("en-GB", { hour12: false, timeZone: "UTC" }) + " UTC"
+            );
+        };
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, []);
 
-    const getSubtitle = () => {
-        if (pathname === "/dashboard") return "Monitor your trading performance";
-        if (pathname === "/strategies") return "Manage your trading algorithms";
-        if (pathname === "/backtests") return "Analyze historical performance";
-        if (pathname.startsWith("/strategies/new")) return "Build and test your trading strategy";
-        if (pathname.startsWith("/strategies/")) return "Configure and run backtests";
-        if (pathname.startsWith("/backtests/")) return "Detailed backtest analysis";
-        return "Advanced algorithmic trading backtesting platform";
-    };
+    const entry = titles.find((t) => t.match(pathname));
 
     return (
-        <header className="flex h-16 items-center justify-between border-b border-[var(--color-border)] bg-white/80 backdrop-blur-sm px-6 sticky top-0 z-40">
-            <div className="flex items-center gap-4 animate-fade-in">
-                <div>
-                    <h1 className="text-xl font-semibold text-[var(--color-primary-text)]">
-                        {getTitle()}
-                    </h1>
-                    <p className="text-sm text-[var(--color-muted)] -mt-1">
-                        {getSubtitle()}
-                    </p>
-                </div>
+        <header className="glass sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between px-6">
+            <div>
+                <h1 className="text-[17px] font-semibold tracking-tight text-[var(--text-primary)]">
+                    {entry?.title || "QuantLab"}
+                </h1>
+                <p className="text-xs text-[var(--text-muted)]">
+                    {entry?.subtitle || "Professional backtesting"}
+                </p>
             </div>
-            
-            <div className="flex items-center gap-4 animate-fade-in">
-                {/* Search */}
-                <div className="relative hidden md:block">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-muted)]" />
-                    <input
-                        type="text"
-                        placeholder="Search strategies, backtests..."
-                        className="pl-10 pr-4 py-2 w-64 text-sm border border-[var(--color-border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    />
+
+            <div className="flex items-center gap-4">
+                <div className="num hidden items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1.5 text-xs text-[var(--text-secondary)] md:flex">
+                    <Globe className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                    {clock || "—"}
                 </div>
-
-                {/* Notifications */}
-                <button className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 group">
-                    <Bell className="h-5 w-5 text-[var(--color-muted)] group-hover:text-[var(--color-primary-text)]" />
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center">
-                        <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
-                    </span>
-                </button>
-
-                {/* Settings */}
-                <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 group">
-                    <Settings className="h-5 w-5 text-[var(--color-muted)] group-hover:text-[var(--color-primary-text)]" />
-                </button>
-
-                {/* User Menu */}
-                <div className="relative">
-                    <button
-                        onClick={() => setShowUserMenu(!showUserMenu)}
-                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 group"
-                    >
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-sm">
-                            <User className="h-4 w-4 text-white" />
-                        </div>
-                        <ChevronDown className="h-4 w-4 text-[var(--color-muted)] group-hover:text-[var(--color-primary-text)] transition-transform duration-200" />
-                    </button>
-
-                    {/* User Dropdown */}
-                    {showUserMenu && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-[var(--color-border)] py-2 animate-scale-in">
-                            <div className="px-4 py-2 border-b border-[var(--color-border)]">
-                                <p className="text-sm font-medium text-[var(--color-primary-text)]">User Account</p>
-                                <p className="text-xs text-[var(--color-muted)]">user@example.com</p>
-                            </div>
-                            <button className="w-full text-left px-4 py-2 text-sm text-[var(--color-secondary-text)] hover:bg-gray-50 transition-colors">
-                                Profile Settings
-                            </button>
-                            <button className="w-full text-left px-4 py-2 text-sm text-[var(--color-secondary-text)] hover:bg-gray-50 transition-colors">
-                                API Keys
-                            </button>
-                            <button className="w-full text-left px-4 py-2 text-sm text-[var(--color-secondary-text)] hover:bg-gray-50 transition-colors">
-                                Preferences
-                            </button>
-                        </div>
-                    )}
+                <div className="hidden items-center gap-1.5 rounded-lg border border-[rgba(16,185,129,0.25)] bg-[var(--profit-soft)] px-3 py-1.5 text-xs font-medium text-[var(--profit-text)] md:flex">
+                    <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-[var(--profit)]" />
+                    Live data
                 </div>
+                <Link href="/strategies/new">
+                    <Button size="sm">
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        New Strategy
+                    </Button>
+                </Link>
             </div>
         </header>
     );

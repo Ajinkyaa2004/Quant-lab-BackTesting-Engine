@@ -38,6 +38,13 @@ class Backtest(BaseModel):
     
     # Store all trades as JSON
     trades_json = Column(JSON, nullable=True)
+
+    # Full metrics suite (Sortino, Calmar, CAGR, expectancy, ...)
+    metrics_json = Column(JSON, nullable=True)
+    # Curves: {timestamps, equity, benchmark, drawdown, monthly_returns}
+    curves_json = Column(JSON, nullable=True)
+    # Run parameters: {broker, commission_pct, slippage_pct, limit, ...}
+    params_json = Column(JSON, nullable=True)
     
     # Relationships
     strategy = relationship("Strategy", backref="backtests")

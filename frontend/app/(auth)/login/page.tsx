@@ -1,18 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const justRegistered = searchParams.get("registered") === "true";
+
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
@@ -24,18 +26,8 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            const formData = new URLSearchParams();
-            // Adjusting payload format based on backend expectation (FastAPI OAuth2PasswordRequestForm usually expects form-data 'username' & 'password')
-            // However, looking at backend/auth/schemas.py, it uses Pydantic UserLogin model (email, password).
-            // Let's first try JSON as defined in backend/auth/routes.py:63 -> UserLogin
-
-            const response = await api.post("/auth/login", {
-                email,
-                password
-            });
-
-            const { access_token } = response.data;
-            localStorage.setItem("token", access_token);
+            const response = await api.post("/auth/login", { email, password });
+            localStorage.setItem("token", response.data.access_token);
             router.push("/dashboard");
         } catch (err: unknown) {
             if (axios.isAxiosError(err) && err.response) {
@@ -49,54 +41,69 @@ export default function LoginPage() {
     };
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Welcome to Backtesting Platform</CardTitle>
-                <CardDescription>Enter your credentials to access your dashboard.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleLogin} className="space-y-4">
-                    {error && (
-                        <div className="bg-red-50 text-[var(--color-trading-loss)] p-3 rounded-md text-sm flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4" />
-                            {error}
-                        </div>
-                    )}
-                    <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
-                        <Input
-                            id="email"
-                            type="email"
-                            placeholder="name@example.com"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                        />
+        <div className="animate-fade-in">
+            <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
+            <p className="mt-1.5 text-sm text-[var(--text-secondary)]">
+                Sign in to your workspace to continue your research.
+            </p>
+
+            <form onSubmit={handleLogin} className="mt-8 space-y-5">
+                {justRegistered && !error && (
+                    <div className="flex items-center gap-2 rounded-lg border border-[rgba(16,185,129,0.25)] bg-[var(--profit-soft)] p-3 text-sm text-[var(--profit-text)]">
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        Account created — sign in to get started.
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="password">Password</Label>
-                        <Input
-                            id="password"
-                            type="password"
-                            placeholder="••••••••"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                        />
+                )}
+                {error && (
+                    <div className="flex items-center gap-2 rounded-lg border border-[rgba(239,68,68,0.25)] bg-[var(--loss-soft)] p-3 text-sm text-[var(--loss-text)]">
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        {error}
                     </div>
-                    <Button type="submit" className="w-full" disabled={loading}>
-                        {loading ? "Signing in..." : "Sign In"}
-                    </Button>
-                </form>
-            </CardContent>
-            <CardFooter className="flex justify-center">
-                <p className="text-sm text-[var(--color-muted)]">
-                    Don&apos;t have an account?{" "}
-                    <Link href="/register" className="text-[var(--color-primary)] hover:underline">
-                        Register for free
-                    </Link>
-                </p>
-            </CardFooter>
-        </Card>
+                )}
+                <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                        id="email"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        autoComplete="email"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                        id="password"
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        autoComplete="current-password"
+                    />
+                </div>
+                <Button type="submit" className="w-full" size="lg" disabled={loading}>
+                    {loading ? "Signing in…" : "Sign in"}
+                    {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
+                </Button>
+            </form>
+
+            <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
+                New to QuantLab?{" "}
+                <Link href="/register" className="font-medium text-[var(--accent-hover)] hover:underline">
+                    Create a free account
+                </Link>
+            </p>
+        </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginForm />
+        </Suspense>
     );
 }

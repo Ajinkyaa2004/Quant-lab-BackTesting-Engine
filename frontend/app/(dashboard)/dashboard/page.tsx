@@ -2,372 +2,238 @@
 
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
-import { Backtest } from "@/lib/types";
+import { Backtest, Strategy } from "@/lib/types";
 import Link from "next/link";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-    FlaskConical, 
-    LineChart, 
-    TrendingUp, 
-    Plus, 
-    Activity, 
-    DollarSign, 
-    Target, 
+import { Badge } from "@/components/ui/badge";
+import { StatCard } from "@/components/ui/stat-card";
+import { fmtPct, fmtDateTime, fmtRatio } from "@/lib/format";
+import {
+    FlaskConical,
+    TrendingUp,
+    Target,
     BarChart3,
-    Clock,
-    Zap,
-    TrendingDown
+    Plus,
+    ArrowRight,
+    ArrowUpRight,
+    ArrowDownRight,
+    History,
+    BookOpen,
 } from "lucide-react";
 
-interface DashboardStats {
-    totalStrategies: number;
-    totalBacktests: number;
-    bestReturn: number;
-    worstReturn: number;
-    avgReturn: number;
-    totalTrades: number;
-    avgWinRate: number;
-    activeStrategies: number;
-}
-
 export default function DashboardPage() {
-    const [stats, setStats] = useState<DashboardStats>({
-        totalStrategies: 0,
-        totalBacktests: 0,
-        bestReturn: 0,
-        worstReturn: 0,
-        avgReturn: 0,
-        totalTrades: 0,
-        avgWinRate: 0,
-        activeStrategies: 0,
-    });
+    const [strategies, setStrategies] = useState<Strategy[]>([]);
+    const [backtests, setBacktests] = useState<Backtest[]>([]);
     const [loading, setLoading] = useState(true);
-    const [recentBacktests, setRecentBacktests] = useState<Backtest[]>([]);
 
     useEffect(() => {
         async function fetchData() {
             try {
                 const [strategiesRes, backtestsRes] = await Promise.all([
                     api.get("/strategies"),
-                    api.get("/strategies/backtest/results")
+                    api.get("/strategies/backtest/results"),
                 ]);
-
-                const strategies = strategiesRes.data;
-                const backtests = backtestsRes.data;
-
-                // Calculate comprehensive stats
-                const returns = backtests.map((b: Backtest) => b.total_return).filter((r: number) => r !== null);
-                const winRates = backtests.map((b: Backtest) => b.win_rate).filter((w: number) => w !== null);
-                const totalTrades = backtests.reduce((sum: number, b: Backtest) => sum + (b.total_trades || 0), 0);
-
-                const calculatedStats: DashboardStats = {
-                    totalStrategies: strategies.length,
-                    totalBacktests: backtests.length,
-                    bestReturn: returns.length > 0 ? Math.max(...returns) : 0,
-                    worstReturn: returns.length > 0 ? Math.min(...returns) : 0,
-                    avgReturn: returns.length > 0 ? returns.reduce((a: number, b: number) => a + b, 0) / returns.length : 0,
-                    totalTrades: totalTrades,
-                    avgWinRate: winRates.length > 0 ? winRates.reduce((a: number, b: number) => a + b, 0) / winRates.length : 0,
-                    activeStrategies: strategies.length, // All strategies are considered active for now
-                };
-
-                setStats(calculatedStats);
-
-                // Get recent 5 backtests sorted by created_at
-                const sortedBacktests = backtests.sort((a: Backtest, b: Backtest) => 
-                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                setStrategies(strategiesRes.data);
+                const sorted = [...backtestsRes.data].sort(
+                    (a: Backtest, b: Backtest) =>
+                        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 );
-                setRecentBacktests(sortedBacktests.slice(0, 5));
+                setBacktests(sorted);
             } catch (error) {
                 console.error("Failed to fetch dashboard data", error);
             } finally {
                 setLoading(false);
             }
         }
-
         fetchData();
     }, []);
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
-
     if (loading) {
         return (
-            <div className="space-y-6 animate-fade-in">
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                     {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className="h-32 loading-skeleton rounded-lg"></div>
+                        <div key={i} className="h-28 loading-skeleton" />
                     ))}
                 </div>
-                <div className="grid gap-6 md:grid-cols-2">
-                    <div className="h-96 loading-skeleton rounded-lg"></div>
-                    <div className="h-96 loading-skeleton rounded-lg"></div>
+                <div className="grid gap-6 lg:grid-cols-3">
+                    <div className="h-96 loading-skeleton lg:col-span-2" />
+                    <div className="h-96 loading-skeleton" />
                 </div>
             </div>
         );
     }
 
+    const returns = backtests.map((b) => b.total_return).filter((r) => r !== null);
+    const winRates = backtests.map((b) => b.win_rate).filter((w): w is number => w !== null);
+    const bestReturn = returns.length ? Math.max(...returns) : 0;
+    const avgReturn = returns.length ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+    const avgWinRate = winRates.length ? winRates.reduce((a, b) => a + b, 0) / winRates.length : 0;
+    const totalTrades = backtests.reduce((sum, b) => sum + (b.total_trades || 0), 0);
+    const recent = backtests.slice(0, 6);
+
     return (
-        <div className="space-y-6 animate-fade-in">
-            {/* Welcome Section */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-blue-900 mb-2">
-                            Welcome to Backtesting Platform
-                        </h1>
-                        <p className="text-blue-700">
-                            Monitor your algorithmic trading performance and manage your strategies
-                        </p>
-                    </div>
-                    <div className="hidden md:block">
-                        <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center">
-                            <Activity className="h-8 w-8 text-white" />
-                        </div>
-                    </div>
-                </div>
+        <div className="animate-fade-in space-y-6">
+            {/* KPI row */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                    label="Strategies"
+                    value={String(strategies.length)}
+                    sub={`${strategies.length} in your library`}
+                    tone="accent"
+                    icon={FlaskConical}
+                />
+                <StatCard
+                    label="Backtests Run"
+                    value={String(backtests.length)}
+                    sub={`${totalTrades.toLocaleString()} simulated trades`}
+                    tone="neutral"
+                    icon={BarChart3}
+                />
+                <StatCard
+                    label="Best Return"
+                    value={fmtPct(bestReturn)}
+                    sub={`Average ${fmtPct(avgReturn)}`}
+                    tone={bestReturn >= 0 ? "profit" : "loss"}
+                    icon={TrendingUp}
+                />
+                <StatCard
+                    label="Avg Win Rate"
+                    value={fmtPct(avgWinRate, 1, false)}
+                    sub="Across all backtests"
+                    tone="neutral"
+                    icon={Target}
+                />
             </div>
 
-            {/* Enhanced Stats Grid */}
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                <Card className="card-hover bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-blue-600">Total Strategies</CardTitle>
-                        <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-                            <FlaskConical className="h-4 w-4 text-white" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-blue-800">{stats.totalStrategies}</div>
-                        <p className="text-xs text-blue-600 mt-1">
-                            {stats.activeStrategies} active algorithms
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card className="card-hover bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-green-600">Best Performance</CardTitle>
-                        <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
-                            <TrendingUp className="h-4 w-4 text-white" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-green-800">
-                            +{stats.bestReturn.toFixed(1)}%
-                        </div>
-                        <p className="text-xs text-green-600 mt-1">
-                            Avg: {stats.avgReturn > 0 ? '+' : ''}{stats.avgReturn.toFixed(1)}%
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card className="card-hover bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-purple-600">Total Backtests</CardTitle>
-                        <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
-                            <BarChart3 className="h-4 w-4 text-white" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-purple-800">{stats.totalBacktests}</div>
-                        <p className="text-xs text-purple-600 mt-1">
-                            {stats.totalTrades.toLocaleString()} total trades
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card className="card-hover bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-orange-600">Win Rate</CardTitle>
-                        <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
-                            <Target className="h-4 w-4 text-white" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-orange-800">
-                            {stats.avgWinRate.toFixed(1)}%
-                        </div>
-                        <p className="text-xs text-orange-600 mt-1">
-                            Average across all strategies
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Main Content Area */}
             <div className="grid gap-6 lg:grid-cols-3">
-                {/* Recent Activity */}
-                <Card className="lg:col-span-2 card-hover">
-                    <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Clock className="h-5 w-5 text-[var(--color-primary)]" />
-                                    Recent Backtests
-                                </CardTitle>
-                                <CardDescription>
-                                    Your latest simulation runs and their performance
-                                </CardDescription>
-                            </div>
-                            <Link href="/backtests">
-                                <Button variant="outline" size="sm">
-                                    View All
-                                </Button>
-                            </Link>
+                {/* Recent backtests */}
+                <Card className="lg:col-span-2">
+                    <CardHeader className="flex-row items-center justify-between space-y-0">
+                        <div>
+                            <CardTitle>Recent Backtests</CardTitle>
+                            <CardDescription className="mt-1">Your latest simulation runs</CardDescription>
                         </div>
+                        <Link href="/backtests">
+                            <Button variant="ghost" size="sm">
+                                View all
+                                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                            </Button>
+                        </Link>
                     </CardHeader>
                     <CardContent>
-                        {recentBacktests.length === 0 ? (
-                            <div className="text-center py-12">
-                                <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                                <h3 className="text-lg font-semibold text-[var(--color-primary-text)] mb-2">
-                                    No backtests yet
-                                </h3>
-                                <p className="text-[var(--color-muted)] mb-6">
-                                    Start by creating a strategy and running your first backtest
+                        {recent.length === 0 ? (
+                            <div className="py-14 text-center">
+                                <BarChart3 className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" strokeWidth={1.5} />
+                                <h3 className="font-semibold text-[var(--text-primary)]">No backtests yet</h3>
+                                <p className="mx-auto mt-1.5 max-w-sm text-sm text-[var(--text-muted)]">
+                                    Create a strategy and run your first simulation to see performance here.
                                 </p>
-                                <Link href="/strategies/new">
-                                    <Button className="btn-gradient">
-                                        <Plus className="h-4 w-4 mr-2" />
-                                        Create Strategy
+                                <Link href="/strategies/new" className="mt-5 inline-block">
+                                    <Button>
+                                        <Plus className="mr-1.5 h-4 w-4" />
+                                        Create strategy
                                     </Button>
                                 </Link>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {recentBacktests.map((backtest, index) => (
-                                    <div 
-                                        key={backtest.id} 
-                                        className="flex items-center justify-between p-4 border border-[var(--color-border)] rounded-lg hover:bg-[var(--color-table-hover)] transition-colors animate-fade-in"
-                                        style={{ animationDelay: `${index * 0.1}s` }}
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                                                backtest.total_return >= 0 
-                                                    ? 'bg-green-100 text-green-600' 
-                                                    : 'bg-red-100 text-red-600'
-                                            }`}>
-                                                {backtest.total_return >= 0 ? 
-                                                    <TrendingUp className="h-5 w-5" /> : 
-                                                    <TrendingDown className="h-5 w-5" />
-                                                }
+                            <div className="space-y-2">
+                                {recent.map((bt) => {
+                                    const positive = bt.total_return >= 0;
+                                    return (
+                                        <Link
+                                            key={bt.id}
+                                            href={`/backtests/${bt.id}`}
+                                            className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--surface-3)]"
+                                        >
+                                            <div className="flex min-w-0 items-center gap-3.5">
+                                                <div
+                                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${positive ? "bg-[var(--profit-soft)] text-[var(--profit-text)]" : "bg-[var(--loss-soft)] text-[var(--loss-text)]"}`}
+                                                >
+                                                    {positive ? <ArrowUpRight className="h-4.5 w-4.5" /> : <ArrowDownRight className="h-4.5 w-4.5" />}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                                                        {bt.strategy_name}
+                                                    </p>
+                                                    <p className="num text-xs text-[var(--text-muted)]">
+                                                        {bt.symbol} · {bt.interval} · {fmtDateTime(new Date(bt.created_at).getTime())}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="font-semibold text-[var(--color-primary-text)]">
-                                                    {backtest.strategy_name}
+                                            <div className="shrink-0 text-right">
+                                                <p className={`num text-sm font-semibold ${positive ? "text-[var(--profit-text)]" : "text-[var(--loss-text)]"}`}>
+                                                    {fmtPct(bt.total_return)}
                                                 </p>
-                                                <p className="text-sm text-[var(--color-muted)]">
-                                                    {backtest.symbol} • {backtest.interval} • {formatDate(backtest.created_at)}
+                                                <p className="num text-xs text-[var(--text-muted)]">
+                                                    Sharpe {fmtRatio(bt.sharpe_ratio)} · {bt.total_trades} trades
                                                 </p>
                                             </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className={`font-bold text-lg ${
-                                                backtest.total_return >= 0 
-                                                    ? 'text-[var(--color-trading-profit)]' 
-                                                    : 'text-[var(--color-trading-loss)]'
-                                            }`}>
-                                                {backtest.total_return > 0 ? "+" : ""}{backtest.total_return.toFixed(2)}%
-                                            </p>
-                                            <p className="text-sm text-[var(--color-muted)]">
-                                                {backtest.total_trades} trades • {backtest.win_rate?.toFixed(1)}% win rate
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
+                                        </Link>
+                                    );
+                                })}
                             </div>
                         )}
                     </CardContent>
                 </Card>
 
-                {/* Quick Actions & Performance Summary */}
+                {/* Side column */}
                 <div className="space-y-6">
-                    {/* Quick Actions */}
-                    <Card className="card-hover">
+                    <Card>
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Zap className="h-5 w-5 text-[var(--color-primary)]" />
-                                Quick Actions
-                            </CardTitle>
-                            <CardDescription>
-                                Manage your trading strategies
-                            </CardDescription>
+                            <CardTitle>Quick Actions</CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-3">
-                            <Link href="/strategies/new">
-                                <Button className="w-full justify-start btn-gradient">
-                                    <Plus className="mr-2 h-4 w-4" /> 
-                                    Create New Strategy
+                        <CardContent className="space-y-2.5">
+                            <Link href="/strategies/new" className="block">
+                                <Button className="w-full justify-start">
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    New strategy
                                 </Button>
                             </Link>
-                            <Link href="/strategies">
-                                <Button className="w-full justify-start" variant="outline">
-                                    <FlaskConical className="mr-2 h-4 w-4" /> 
-                                    View All Strategies
+                            <Link href="/strategies" className="block">
+                                <Button variant="secondary" className="w-full justify-start">
+                                    <FlaskConical className="mr-2 h-4 w-4" />
+                                    Strategy library
                                 </Button>
                             </Link>
-                            <Link href="/backtests">
-                                <Button className="w-full justify-start" variant="outline">
-                                    <LineChart className="mr-2 h-4 w-4" /> 
-                                    Backtest History
+                            <Link href="/backtests" className="block">
+                                <Button variant="secondary" className="w-full justify-start">
+                                    <History className="mr-2 h-4 w-4" />
+                                    Backtest history
                                 </Button>
                             </Link>
                         </CardContent>
                     </Card>
 
-                    {/* Performance Summary */}
-                    <Card className="card-hover">
+                    <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <DollarSign className="h-5 w-5 text-[var(--color-primary)]" />
-                                Performance Summary
+                                <BookOpen className="h-4 w-4 text-[var(--accent-hover)]" />
+                                Research Playbook
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-[var(--color-muted)]">Best Return</span>
-                                <span className="font-semibold text-[var(--color-trading-profit)]">
-                                    +{stats.bestReturn.toFixed(2)}%
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-[var(--color-muted)]">Worst Return</span>
-                                <span className="font-semibold text-[var(--color-trading-loss)]">
-                                    {stats.worstReturn.toFixed(2)}%
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-[var(--color-muted)]">Average Return</span>
-                                <span className={`font-semibold ${
-                                    stats.avgReturn >= 0 
-                                        ? 'text-[var(--color-trading-profit)]' 
-                                        : 'text-[var(--color-trading-loss)]'
-                                }`}>
-                                    {stats.avgReturn > 0 ? '+' : ''}{stats.avgReturn.toFixed(2)}%
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-[var(--color-muted)]">Total Trades</span>
-                                <span className="font-semibold text-[var(--color-primary-text)]">
-                                    {stats.totalTrades.toLocaleString()}
-                                </span>
-                            </div>
+                        <CardContent className="space-y-3 text-sm text-[var(--text-secondary)]">
+                            {[
+                                ["Test across regimes", "Run the same strategy on bull, bear and sideways periods before trusting it."],
+                                ["Respect costs", "Keep commission & slippage on — most \"edges\" die there."],
+                                ["Beat the benchmark", "A strategy that underperforms buy & hold isn't worth its risk."],
+                            ].map(([title, text]) => (
+                                <div key={title} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
+                                    <p className="text-xs font-semibold text-[var(--text-primary)]">{title}</p>
+                                    <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">{text}</p>
+                                </div>
+                            ))}
                         </CardContent>
                     </Card>
+
+                    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                        <Badge variant="warning" className="mb-2">Simulation only</Badge>
+                        <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                            All results are historical simulations. No live orders, no real funds.
+                            Past performance never guarantees future results.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>

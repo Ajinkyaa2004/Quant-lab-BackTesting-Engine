@@ -40,6 +40,7 @@ class Position:
         self.take_profit = take_profit
         self.trailing_stop = trailing_stop
         self.candles_held = 0
+        self.entry_fee = 0.0
         self.highest_price = entry_price if side == "LONG" else entry_price
         self.lowest_price = entry_price if side == "SHORT" else entry_price
     

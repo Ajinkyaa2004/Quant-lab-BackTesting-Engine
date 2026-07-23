@@ -43,3 +43,33 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Columns added after the initial release. create_all() only creates missing
+# tables, so pre-existing databases need these applied at startup.
+_MIGRATION_COLUMNS = {
+    "users": [
+        ("plan", "VARCHAR(20) DEFAULT 'free'"),
+    ],
+    "backtests": [
+        ("metrics_json", "JSON"),
+        ("curves_json", "JSON"),
+        ("params_json", "JSON"),
+    ],
+}
+
+
+def run_startup_migrations():
+    """Add any missing columns to existing tables (SQLite + PostgreSQL)."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    with engine.connect() as conn:
+        for table, columns in _MIGRATION_COLUMNS.items():
+            if table not in inspector.get_table_names():
+                continue
+            existing = {col["name"] for col in inspector.get_columns(table)}
+            for name, ddl_type in columns:
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}"))
+        conn.commit()

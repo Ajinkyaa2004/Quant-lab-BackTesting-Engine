@@ -11,6 +11,7 @@ from models.user import User
 from auth.dependencies import get_current_user
 from strategies.schemas import (
     StrategyUpload,
+    StrategyUpdate,
     StrategyResponse,
     BacktestRequest,
     BacktestResponse,
@@ -115,6 +116,52 @@ async def get_strategy(
     return strategy
 
 
+@router.put("/{strategy_id}", response_model=StrategyResponse)
+async def update_strategy(
+    strategy_id: int,
+    strategy_data: StrategyUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing strategy. Only provided fields are changed;
+    updated code is re-validated before saving.
+    """
+    strategy = db.query(Strategy).filter(
+        Strategy.id == strategy_id,
+        Strategy.user_id == current_user.id
+    ).first()
+
+    if not strategy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found"
+        )
+
+    new_code = strategy_data.code if strategy_data.code is not None else strategy.code
+    new_class = strategy_data.class_name if strategy_data.class_name is not None else strategy.class_name
+
+    if strategy_data.code is not None or strategy_data.class_name is not None:
+        try:
+            StrategyLoader.load_strategy_class(new_code, new_class)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid strategy code: {str(e)}"
+            )
+
+    if strategy_data.name is not None:
+        strategy.name = strategy_data.name
+    if strategy_data.description is not None:
+        strategy.description = strategy_data.description
+    strategy.code = new_code
+    strategy.class_name = new_class
+
+    db.commit()
+    db.refresh(strategy)
+    return strategy
+
+
 @router.delete("/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_strategy(
     strategy_id: int,
@@ -179,16 +226,18 @@ async def run_backtest(
     try:
         engine = BacktestingEngine(
             initial_capital=backtest_request.initial_capital,
-            max_positions=backtest_request.max_positions or 1
+            max_positions=backtest_request.max_positions or 1,
+            commission_pct=backtest_request.commission_pct or 0.0,
+            slippage_pct=backtest_request.slippage_pct or 0.0,
         )
-        
+
         # Prepare strategy config
         strategy_config = {
             "max_positions": backtest_request.max_positions or 1,
             "initial_capital": backtest_request.initial_capital,
             "risk_per_trade": backtest_request.risk_per_trade or 0.02
         }
-        
+
         results = engine.run_backtest(
             strategy_code=strategy.code,
             class_name=strategy.class_name,
@@ -205,15 +254,27 @@ async def run_backtest(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error running backtest: {str(e)}"
         )
-    
+
+    params = dict(results.get("config") or {})
+    params["broker"] = backtest_request.broker
+    params["risk_per_trade"] = backtest_request.risk_per_trade or 0.02
+
+    curves = {
+        "timestamps": results["equity_timestamps"],
+        "equity": results["equity_curve"],
+        "benchmark": results["benchmark_curve"],
+        "drawdown": results["drawdown_curve"],
+        "monthly_returns": results["monthly_returns"],
+    }
+
     # Save backtest results to database
     backtest = Backtest(
         strategy_id=strategy.id,
         user_id=current_user.id,
         symbol=backtest_request.symbol,
         interval=backtest_request.interval,
-        start_time=backtest_request.start_time or 0,
-        end_time=backtest_request.end_time or 0,
+        start_time=params.get("data_start") or backtest_request.start_time or 0,
+        end_time=params.get("data_end") or backtest_request.end_time or 0,
         initial_capital=backtest_request.initial_capital,
         final_capital=results["final_capital"],
         total_return=results["metrics"]["total_return"],
@@ -223,16 +284,20 @@ async def run_backtest(
         total_trades=results["total_trades"],
         winning_trades=results["winning_trades"],
         losing_trades=results["losing_trades"],
-        trades_json=results["trades"]
+        trades_json=results["trades"],
+        metrics_json=results["metrics"],
+        curves_json=curves,
+        params_json=params,
     )
-    
+
     db.add(backtest)
     db.commit()
     db.refresh(backtest)
-    
+
     # Format response
     return BacktestResponse(
         backtest_id=backtest.id,
+        strategy_id=strategy.id,
         strategy_name=strategy.name,
         symbol=backtest_request.symbol,
         interval=backtest_request.interval,
@@ -244,6 +309,11 @@ async def run_backtest(
         losing_trades=results["losing_trades"],
         trades=results["trades"],
         equity_curve=results["equity_curve"],
+        equity_timestamps=results["equity_timestamps"],
+        benchmark_curve=results["benchmark_curve"],
+        drawdown_curve=results["drawdown_curve"],
+        monthly_returns=results["monthly_returns"],
+        params=params,
         created_at=backtest.created_at
     )
 
@@ -329,27 +399,36 @@ async def get_backtest_result(
         )
     
     strategy = db.query(Strategy).filter(Strategy.id == backtest.strategy_id).first()
-    
+
+    metrics = backtest.metrics_json or {
+        "total_return": backtest.total_return,
+        "sharpe_ratio": backtest.sharpe_ratio or 0.0,
+        "max_drawdown": backtest.max_drawdown,
+        "win_rate": backtest.win_rate or 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+    }
+    curves = backtest.curves_json or {}
+
     return BacktestResponse(
         backtest_id=backtest.id,
+        strategy_id=backtest.strategy_id,
         strategy_name=strategy.name if strategy else "Unknown",
         symbol=backtest.symbol,
         interval=backtest.interval,
         initial_capital=backtest.initial_capital,
         final_capital=backtest.final_capital,
-        metrics={
-            "total_return": backtest.total_return,
-            "sharpe_ratio": backtest.sharpe_ratio or 0.0,
-            "max_drawdown": backtest.max_drawdown,
-            "win_rate": backtest.win_rate or 0.0,
-            "avg_win": 0.0,  # Not stored in DB
-            "avg_loss": 0.0,  # Not stored in DB
-            "profit_factor": 0.0  # Not stored in DB
-        },
+        metrics=metrics,
         total_trades=backtest.total_trades,
         winning_trades=backtest.winning_trades,
         losing_trades=backtest.losing_trades,
         trades=backtest.trades_json or [],
-        equity_curve=[],  # Not stored in DB
+        equity_curve=curves.get("equity", []),
+        equity_timestamps=curves.get("timestamps", []),
+        benchmark_curve=curves.get("benchmark", []),
+        drawdown_curve=curves.get("drawdown", []),
+        monthly_returns=curves.get("monthly_returns", []),
+        params=backtest.params_json,
         created_at=backtest.created_at
     )

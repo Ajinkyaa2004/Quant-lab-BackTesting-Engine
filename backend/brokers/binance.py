@@ -16,15 +16,17 @@ class BinanceBroker(BrokerBase):
     """
     
     BASE_URL = "https://api.binance.com/api/v3"
-    
+    PAGE_SIZE = 1000       # Binance per-request maximum
+    MAX_CANDLES = 10000    # Hard safety cap across paginated requests
+
     def __init__(self):
         """Initialize the Binance broker."""
         self.name = "binance"
-    
+
     def get_name(self) -> str:
         """Get the broker name."""
         return self.name
-    
+
     def get_ohlc(
         self,
         symbol: str,
@@ -34,58 +36,76 @@ class BinanceBroker(BrokerBase):
         end_time: Optional[int] = None
     ) -> List[Candle]:
         """
-        Fetch OHLC data from Binance API.
-        
+        Fetch OHLC data from Binance, paginating past the 1000-candle
+        per-request limit when a larger range is requested.
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT", "ETHUSDT")
             interval: Time interval (e.g., "1m", "5m", "1h", "1d")
-            limit: Number of candles to return (default: 500, max: 1000)
+            limit: Total number of candles to return (default: 500, max: 10000)
             start_time: Start timestamp in milliseconds (optional)
             end_time: End timestamp in milliseconds (optional)
-            
+
         Returns:
             List of Candle objects with normalized format
         """
-        # Default limit
         if limit is None:
-            limit = 500
-        elif limit > 1000:
-            limit = 1000  # Binance max limit
-        
-        # Build request parameters
-        params = {
-            "symbol": symbol.upper(),
-            "interval": self._normalize_interval(interval),
-            "limit": limit
-        }
-        
-        if start_time:
-            params["startTime"] = start_time
-        if end_time:
-            params["endTime"] = end_time
-        
+            limit = 500 if not (start_time and end_time) else self.MAX_CANDLES
+        limit = min(limit, self.MAX_CANDLES)
+
+        normalized_interval = self._normalize_interval(interval)
+
+        # Binance without startTime returns only the latest window, so requests
+        # beyond one page need an explicit anchor to paginate forward from.
+        if start_time is None and limit > self.PAGE_SIZE:
+            import time
+            anchor = end_time if end_time else int(time.time() * 1000)
+            start_time = anchor - limit * self._interval_ms(normalized_interval)
+
+        candles: List[Candle] = []
+        cursor = start_time
+
         try:
-            # Make API request
-            url = f"{self.BASE_URL}/klines"
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(url, params=params)
-                response.raise_for_status()
-                data = response.json()
-            
-            # Convert Binance format to our standard Candle model
-            candles = []
-            for candle in data:
-                candles.append(Candle(
-                    timestamp=int(candle[0]),  # Open time
-                    open=float(candle[1]),    # Open price
-                    high=float(candle[2]),    # High price
-                    low=float(candle[3]),     # Low price
-                    close=float(candle[4]),   # Close price
-                    volume=float(candle[5])    # Volume
-                ))
-            
+            with httpx.Client(timeout=15.0) as client:
+                while len(candles) < limit:
+                    page_limit = min(self.PAGE_SIZE, limit - len(candles))
+                    params = {
+                        "symbol": symbol.upper(),
+                        "interval": normalized_interval,
+                        "limit": page_limit,
+                    }
+                    if cursor:
+                        params["startTime"] = cursor
+                    if end_time:
+                        params["endTime"] = end_time
+
+                    response = client.get(f"{self.BASE_URL}/klines", params=params)
+                    response.raise_for_status()
+                    data = response.json()
+
+                    if not data:
+                        break
+
+                    for raw in data:
+                        candles.append(Candle(
+                            timestamp=int(raw[0]),   # Open time
+                            open=float(raw[1]),
+                            high=float(raw[2]),
+                            low=float(raw[3]),
+                            close=float(raw[4]),
+                            volume=float(raw[5])
+                        ))
+
+                    # Without a start cursor Binance returns the latest window;
+                    # there is nothing further to paginate.
+                    if cursor is None:
+                        break
+                    if len(data) < page_limit:
+                        break  # Reached the end of available data
+                    cursor = int(data[-1][0]) + 1  # Next page starts after last open time
+
             return candles
-            
+
         except httpx.HTTPStatusError as e:
             raise Exception(f"Binance API error: {e.response.status_code} - {e.response.text}")
         except httpx.RequestError as e:
@@ -122,6 +142,13 @@ class BinanceBroker(BrokerBase):
             "This feature is not implemented in the public endpoint."
         )
     
+    def _interval_ms(self, interval: str) -> int:
+        """Milliseconds per candle for a Binance interval string."""
+        unit = interval[-1]
+        value = int(interval[:-1])
+        per_unit = {"m": 60_000, "h": 3_600_000, "d": 86_400_000, "w": 604_800_000, "M": 2_592_000_000}
+        return value * per_unit.get(unit, 3_600_000)
+
     def _normalize_interval(self, interval: str) -> str:
         """
         Normalize interval to Binance format.

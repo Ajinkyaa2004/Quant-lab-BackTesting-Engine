@@ -14,17 +14,26 @@ class StrategyUpload(BaseModel):
     class_name: str = Field(..., description="Name of the strategy class")
 
 
+class StrategyUpdate(BaseModel):
+    """Schema for updating an existing strategy (all fields optional)."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    code: Optional[str] = None
+    class_name: Optional[str] = None
+
+
 class StrategyResponse(BaseModel):
     """Schema for strategy response."""
     id: int
     name: str
     description: Optional[str]
     class_name: str
+    code: Optional[str] = None
     is_active: bool
     user_id: int
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -37,10 +46,12 @@ class BacktestRequest(BaseModel):
     interval: str = Field(..., description="Time interval (e.g., '1h', '1d')")
     start_time: Optional[int] = Field(None, description="Start timestamp in milliseconds")
     end_time: Optional[int] = Field(None, description="End timestamp in milliseconds")
-    limit: Optional[int] = Field(None, description="Maximum number of candles")
+    limit: Optional[int] = Field(None, description="Maximum number of candles", le=10000)
     initial_capital: float = Field(10000.0, description="Initial capital for backtest", gt=0)
     max_positions: Optional[int] = Field(1, description="Maximum concurrent positions", ge=1)
     risk_per_trade: Optional[float] = Field(0.02, description="Risk per trade as decimal (0.02 = 2%)", ge=0, le=1)
+    commission_pct: Optional[float] = Field(0.001, description="Commission per fill as decimal (0.001 = 0.1%)", ge=0, le=0.05)
+    slippage_pct: Optional[float] = Field(0.0005, description="Slippage per fill as decimal (0.0005 = 0.05%)", ge=0, le=0.05)
 
 
 class Trade(BaseModel):
@@ -52,41 +63,48 @@ class Trade(BaseModel):
     exit_price: float
     quantity: float
     pnl: float
+    gross_pnl: Optional[float] = None
+    fees: Optional[float] = None
     return_pct: float
     exit_reason: str
     candles_held: int
 
 
-class BacktestMetrics(BaseModel):
-    """Schema for backtest performance metrics."""
-    total_return: float
-    sharpe_ratio: float
-    max_drawdown: float
-    win_rate: float
-    avg_win: float
-    avg_loss: float
-    profit_factor: float
+class MonthlyReturn(BaseModel):
+    """Calendar-month return of the equity curve."""
+    year: int
+    month: int
+    return_: float = Field(..., alias="return")
+
+    class Config:
+        populate_by_name = True
 
 
 class BacktestResponse(BaseModel):
-    """Schema for backtest response."""
+    """Schema for backtest response (live run + stored detail)."""
     backtest_id: Optional[int] = None
+    strategy_id: Optional[int] = None
     strategy_name: str
     symbol: str
     interval: str
     initial_capital: float
     final_capital: float
-    metrics: BacktestMetrics
+    metrics: Dict[str, float]
     total_trades: int
     winning_trades: int
     losing_trades: int
     trades: List[Trade]
     equity_curve: List[float]
+    equity_timestamps: List[int] = []
+    benchmark_curve: List[float] = []
+    drawdown_curve: List[float] = []
+    monthly_returns: List[Dict[str, Any]] = []
+    params: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
 
 
 class BacktestResultResponse(BaseModel):
-    """Schema for stored backtest result."""
+    """Schema for stored backtest result (list view)."""
     id: int
     strategy_id: int
     strategy_name: str
@@ -104,6 +122,6 @@ class BacktestResultResponse(BaseModel):
     winning_trades: int
     losing_trades: int
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
