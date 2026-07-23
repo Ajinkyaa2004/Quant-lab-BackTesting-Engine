@@ -3,7 +3,7 @@
 <!-- Add your project logo/banner here -->
 <!-- ![Backtesting Engine Banner](./assets/banner.png) -->
 
-# 📈 Backtesting Engine
+# 📈 Quant Lab Backtesting Engine
 
 ### Professional Algorithmic Trading Platform for Strategy Development & Testing
 
